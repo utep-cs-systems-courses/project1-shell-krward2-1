@@ -14,11 +14,22 @@ path = path.split(':')
 
 while True:
     command = input(sys.ps1)
+    if command == '':
+        continue
+    if command == 'exit':
+        sys.exit()
     command = command.split()
+    if command[0] == 'cd':
+        os.chdir(command[1])
+        continue
 
     # Check if command[0] is itself a path
     if os.path.exists(command[0]):
-        os.execve(command[0], command, os.environ.copy())
+        pid = os.fork()
+        if pid == 0:
+            os.execve(command[0], command, os.environ.copy())
+        else:
+            os.wait()
     else:
         for directory in path:
             executable = directory + '/' + command[0]

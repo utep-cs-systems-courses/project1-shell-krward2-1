@@ -6,6 +6,7 @@ import re
 
 
 def execute(command):
+    command = command.split()
     # Check if command[0] is itself a path
     if os.path.exists(command[0]):
             os.execve(command[0], command, os.environ.copy())
@@ -55,7 +56,9 @@ def shell():
         if command == '':
             continue
         if command == 'exit':
-            sys.exit()
+            sys.exit(1)
+        if 'cd' in command:
+            os.chdir(command.split()[1])
         if '>' in command:
             split(command, option='redirect')
         split(command)

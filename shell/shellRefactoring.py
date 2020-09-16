@@ -6,26 +6,28 @@ import re
 
 
 def execute(command):
-    command = command.split()
+    print('Command in execute before split ', command)
+    command1 = command.split()
+    print('Executed command ', command1)
     # Check if command[0] is itself a path
-    if os.path.exists(command[0]):
-            os.execve(command[0], command, os.environ.copy())
+    if os.path.exists(command1[0]):
+            os.execve(command1[0], command1, os.environ.copy())
     else:
         for directory in path:
-            executable = directory + '/' + command[0]
+            executable = directory + '/' + command1[0]
             if os.path.exists(executable):
-                    os.execve(executable, command, os.environ.copy())
+                    os.execve(executable, command1, os.environ.copy())
 
 
 def redirect(command):
-    command, output = command.split('>')
-    command = command.split()
+    command1, output = command.split('>')
     output = output.strip()
     os.close(1)
     os.open(output, os.O_CREAT | os.O_WRONLY)
     os.set_inheritable(1, True)
 
-    execute(command)
+    print('Command passed to execute. ', command1, file=sys.stderr)
+    execute(command1)
 
 
 def split(command, option=None):
@@ -34,6 +36,7 @@ def split(command, option=None):
         if option is None:
             execute(command)
         if option == 'redirect':
+            print('redirect')
             redirect(command)
     else:
         os.wait()
@@ -60,6 +63,7 @@ def shell():
         if 'cd' in command:
             os.chdir(command.split()[1])
         if '>' in command:
+            print('Redirection')
             split(command, option='redirect')
         split(command)
 

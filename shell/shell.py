@@ -83,7 +83,7 @@ while True:
                     sys.exit()
             else:
                 os.wait()
-    continue
+        continue
 
     command = command.split()
     if command[0] == 'cd':
@@ -94,6 +94,7 @@ while True:
     if os.path.exists(command[0]):
         pid = os.fork()
         if pid == 0:
+            print('Executing')
             os.execve(command[0], command, os.environ.copy())
         else:
             os.wait()

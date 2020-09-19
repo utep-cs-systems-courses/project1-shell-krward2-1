@@ -5,107 +5,109 @@ import sys
 import re
 
 
-try:
-    sys.ps1
-except AttributeError:
-    sys.ps1 = '$ '
-path = os.environ['PATH']
-path = path.split(':')
-
-while True:
-    command = input(sys.ps1)
-    if command == '':
-        continue
-    if command == 'exit':
-        sys.exit()
-    if '>' in command:
-        command, output = command.split('>')
-        command = command.split()
-        output = output.strip()
-        pid = os.fork()
-
-        if pid == 0:
-            os.close(1)
-            os.open(output, os.O_CREAT | os.O_WRONLY)
-            os.set_inheritable(1, True)
-            if os.path.exists(command[0]):
-                os.execve(command[0], command, os.environ.copy())
-            else:
-                for directory in path:
-                    executable = directory + '/' + command[0]
-                    if os.path.exists(executable):
-                        os.execve(executable, command, os.environ.copy())
-                sys.exit()
-        else:
-            os.wait()
-
-        continue
-
-    if '|' in command:
-        command, command2 = command.split('|')
-        command = command.split()
-        command2 = command2.split()
-
-        r, w = os.pipe()
-        for f in (r, w):
-            os.set_inheritable(f, True)
-
-        pid = os.fork()
-        if pid == 0:
-            os.close(1)
-            os.dup(w)
-            os.set_inheritable(1, True)
-            for fd in (w, r):
-               os.close(fd)
-            if os.path.exists(command[0]):
-                os.execve(command[0], command, os.environ)
-            else:
-                for directory in path:
-                    executable = directory + '/' + command[0]
-                    if os.path.exists(executable):
-                        os.execve(executable, command, os.environ)
-                sys.exit()
-        else:
-            pid = os.fork()
-            if pid == 0:
-                os.close(0)
-                os.dup(r)
-                os.set_inheritable(0, True)
-                for fd in (w, r):
-                    os.close(fd)
-                if os.path.exists(command2[0]):
-                    os.execve(command2[0], command2, os.environ)
-                else:
-                    for directory in path:
-                        executable = directory + '/' + command2[0]
-                        if os.path.exists(executable):
-                            os.execve(executable, command2, os.environ)
-                    sys.exit()
-            else:
-                os.wait()
-        continue
-
-    command = command.split()
-    if command[0] == 'cd':
-        os.chdir(command[1])
-        continue
-
+def execute(command):
+    cmd = command.split()
+    #print('PID: ', os.getpid(), 'about to execute: ', cmd)
     # Check if command[0] is itself a path
-    if os.path.exists(command[0]):
-        pid = os.fork()
-        if pid == 0:
-            print('Executing')
-            os.execve(command[0], command, os.environ.copy())
-        else:
-            os.wait()
+    if os.path.exists(cmd[0]):
+        os.execve(cmd[0], cmd, os.environ.copy())
     else:
         for directory in path:
-            executable = directory + '/' + command[0]
+            executable = directory + '/' + cmd[0]
             if os.path.exists(executable):
-                pid = os.fork()
-                if pid == 0:
-                    os.execve(executable, command, os.environ.copy())
-                else:
-                    os.wait()
+                os.execve(executable, cmd, os.environ.copy())
 
 
+def redirect(input):
+    cmd, output = input.split('>')
+    output = output.strip()
+    os.close(1)
+    os.open(output, os.O_CREAT | os.O_WRONLY)
+    os.set_inheritable(1, True)
+
+    #print('')
+    execute(cmd)
+
+#TODO: Fix pipe output. Ex case: ls -a | grep shell.py
+def pipe(command_set, type='write', file_descriptor=None):
+    if type == 'write':
+        #print('Child 1: Creating read and write ends')
+        cmd, cmd2 = command_set.split('|')
+        read_pipe, write_pipe = os.pipe()
+        for fd in (read_pipe, write_pipe):
+            os.set_inheritable(fd, True)
+        #print('Child 1: Pipes created. Forking new process to run process connected to read end.')
+        fork_new_process(cmd2, option='pipe_complete', file_descriptors=read_pipe)
+
+        #print('Child 1: Setting stdout to write_pipe')
+        os.close(1)
+        os.dup(write_pipe)
+        os.set_inheritable(1, True)
+
+        #print('Child 1: Executing command', file=sys.stderr)
+        execute(cmd)
+    if type == 'read' and file_descriptor:
+
+        #print('Child 2: Set stdin to read_pipe (file_descriptor)', file=sys.stderr)
+        os.set_inheritable(file_descriptor, True)
+        os.close(0)
+        os.dup(file_descriptor)
+        os.set_inheritable(0, True)
+        #print('Child 2: Executing command', file=sys.stderr)
+        execute(command_set)
+
+
+def fork_new_process(input, option=None, file_descriptors=None):
+    pid = os.fork()
+    if pid == 0:
+        if option is None or option == 'run_in_background':
+            #print('PID: ', os.getpid(), ' option=none')
+            execute(input.strip('&').strip())
+        if option == 'redirect':
+            #print('PID: ', os.getpid(), ' option=redirect')
+            redirect(input)
+        if option == 'pipe_begin':
+            #print('PID: ', os.getpid(), ' option=pipe_begin')
+            pipe(input)
+        if option == 'pipe_complete' and file_descriptors:
+            #print('PID: ', os.getpid(), ' option=pipe_complete')
+            pipe(input, type='read', file_descriptor=file_descriptors)
+    if pid != 0 and option != 'pipe_complete' and option != 'run_in_background':
+        #print('PID: ', os.getpid(), ' Parent waiting.')
+        os.wait()
+
+
+def initialize():
+    try:
+        sys.ps1
+    except AttributeError:
+        sys.ps1 = '$ '
+    global path
+    path = os.environ['PATH'].split(':')
+
+
+def shell():
+    initialize()
+    count = 0
+    while True:
+        count += 1
+        #print('PID: ', os.getpid(), ' shell cycle ', count)
+        user_input = input(sys.ps1)
+        if user_input == '':
+            continue
+        elif user_input == 'exit':
+            sys.exit(1)
+        elif 'cd' in user_input:
+            os.chdir(user_input.split()[1])
+        elif '>' in user_input:
+            #print('Redirection')
+            fork_new_process(user_input, option='redirect')
+        elif '|' in user_input:
+            fork_new_process(user_input, option='pipe_begin')
+        elif '&' in user_input:
+            fork_new_process(user_input, option='run_in_background')
+        else:
+            fork_new_process(user_input)
+
+
+shell()

@@ -28,7 +28,7 @@ def redirect(input):
     #print('')
     execute(cmd)
 
-#TODO: Fix pipe output. Ex case: ls -a | grep shell.py
+#TODO: There might be some unnecessary inheritances being made. Try to clean up.
 def pipe(command_set, type='write', file_descriptor=None):
     if type == 'write':
         #print('Child 1: Creating read and write ends')
@@ -36,7 +36,7 @@ def pipe(command_set, type='write', file_descriptor=None):
         read_pipe, write_pipe = os.pipe()
         for fd in (read_pipe, write_pipe):
             os.set_inheritable(fd, True)
-        #print('Child 1: Pipes created. Forking new process to run process connected to read end.')
+        #print('Child 1: Pipes created. Forking new process to run second process connected to read end.')
         fork_new_process(cmd2, option='pipe_complete', file_descriptors=read_pipe)
 
         #print('Child 1: Setting stdout to write_pipe')
@@ -86,13 +86,24 @@ def initialize():
     path = os.environ['PATH'].split(':')
 
 
+def getLine():
+    input = os.read(0, 1024)
+    if input == b'':
+        sys.exit(1)
+    else:
+        return input.decode().strip()
+
+
 def shell():
     initialize()
     count = 0
     while True:
+        if os.isatty(0):
+            os.write(1, sys.ps1.encode())
         count += 1
         #print('PID: ', os.getpid(), ' shell cycle ', count)
-        user_input = input(sys.ps1)
+        user_input = getLine()
+        #print(user_input)
         if user_input == '':
             continue
         elif user_input == 'exit':
